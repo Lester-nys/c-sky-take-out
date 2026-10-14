@@ -1,86 +1,106 @@
+
 package com.sky.utils;
 
 import com.aliyun.oss.ClientException;
 import com.aliyun.oss.OSS;
 import com.aliyun.oss.OSSClientBuilder;
 import com.aliyun.oss.OSSException;
+import com.aliyun.oss.model.OSSObject;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
+
 import java.io.ByteArrayInputStream;
+import java.io.IOException;
+import java.io.InputStream;
 
 @Data
 @AllArgsConstructor
 @Slf4j
-/**
- * 这个类的作用：
- *
- * 将文件上传到阿里云OSS对象存储中保存
- *
- * 前端上传图片后，由后端接收文件，
- * 调用OSS提供的SDK将文件上传到OSS。
- *
- * OSS上传成功后返回文件访问URL，
- * 后端将这个URL保存到数据库中。
- *
- * 后续查询数据时，
- * 后端返回该URL，
- * 前端根据URL访问OSS获取图片，
- * 实现图片回显。
- */
 public class AliOssUtil {
-    // 要提前获取这里的值
+
     private String endpoint;
     private String accessKeyId;
     private String accessKeySecret;
     private String bucketName;
 
     /**
-     * 文件上传
+     * 上传图片到OSS
      *
-     * @param bytes
-     * @param objectName
-     * @return
+     * @param bytes 图片字节数据
+     * @param objectName 图片文件名
+     * @return 后端图片访问地址
      */
-    public String upload(byte[] bytes, String objectName) {  // 返回的就是一个网址  图片在服务器中存储的绝对地址
+    public String upload(byte[] bytes, String objectName) {
 
-        // 创建OSSClient实例。
-        OSS ossClient = new OSSClientBuilder().build(endpoint, accessKeyId, accessKeySecret);
+        // 创建OSS客户端
+        OSS ossClient = new OSSClientBuilder().build(
+                endpoint,
+                accessKeyId,
+                accessKeySecret
+        );
 
         try {
-            // 创建PutObject请求。
-            ossClient.putObject(bucketName, objectName, new ByteArrayInputStream(bytes));
-        } catch (OSSException oe) {
-            System.out.println("Caught an OSSException, which means your request made it to OSS, "
-                    + "but was rejected with an error response for some reason.");
-            System.out.println("Error Message:" + oe.getErrorMessage());
-            System.out.println("Error Code:" + oe.getErrorCode());
-            System.out.println("Request ID:" + oe.getRequestId());
-            System.out.println("Host ID:" + oe.getHostId());
-        } catch (ClientException ce) {
-            System.out.println("Caught an ClientException, which means the client encountered "
-                    + "a serious internal problem while trying to communicate with OSS, "
-                    + "such as not being able to access the network.");
-            System.out.println("Error Message:" + ce.getMessage());
+            // 将图片上传到OSS
+            ossClient.putObject(
+                    bucketName,
+                    objectName,
+                    new ByteArrayInputStream(bytes)
+            );
+
+            // 不再返回OSS的私有文件地址
+            // 返回前端能够访问的后端图片接口地址
+            String filePath = "/api/common/image/" + objectName;
+
+            log.info("OSS上传成功，文件名：{}", objectName);
+
+            return filePath;
+
+        } catch (OSSException e) {
+            log.error("OSS上传失败", e);
+            throw e;
+
+        } catch (ClientException e) {
+            log.error("OSS客户端异常", e);
+            throw e;
+
         } finally {
-            if (ossClient != null) {
-                ossClient.shutdown();
-            }
+            ossClient.shutdown();
         }
-        /**
-         * 拼接成一个网址
-         * */
-        //文件访问路径规则 https://BucketName.Endpoint/ObjectName
-        StringBuilder stringBuilder = new StringBuilder("https://");
-        stringBuilder
-                .append(bucketName)
-                .append(".")
-                .append(endpoint)
-                .append("/")
-                .append(objectName);
+    }
 
-        log.info("文件上传到:{}", stringBuilder.toString());
+    /**
+     * 从OSS读取图片
+     *
+     * @param objectName 图片文件名
+     * @return 图片字节数组
+     */
+    public byte[] download(String objectName) throws IOException {
 
-        return stringBuilder.toString();
+        // 创建OSS客户端
+        OSS ossClient = new OSSClientBuilder().build(
+                endpoint,
+                accessKeyId,
+                accessKeySecret
+        );
+
+        try {
+            // 从OSS中获取图片对象
+            OSSObject ossObject = ossClient.getObject(
+                    bucketName,
+                    objectName
+            );
+
+            // 读取图片内容
+            try (InputStream inputStream =
+                         ossObject.getObjectContent()) {
+
+                return inputStream.readAllBytes();
+            }
+
+        } finally {
+            // 关闭OSS客户端
+            ossClient.shutdown();
+        }
     }
 }

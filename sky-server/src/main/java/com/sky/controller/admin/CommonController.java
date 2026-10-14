@@ -9,9 +9,9 @@ import io.swagger.annotations.Api;
 import io.swagger.annotations.ApiOperation;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
@@ -56,5 +56,35 @@ public class CommonController {
         }
         return Result.error(MessageConstant.UPLOAD_FAILED);
     }
+
+
+    /**
+     * 读取OSS中的图片，并返回给前端
+     */
+    @GetMapping("/image/{objectName:.+}")
+    public ResponseEntity<byte[]> image(
+            @PathVariable String objectName) throws IOException {
+
+        // 校验文件名，只允许访问指定格式的图片
+        if (!objectName.matches(
+                "(?i)[a-z0-9_-]+\\.(png|jpg|jpeg)")) {
+            return ResponseEntity.badRequest().build();
+        }
+
+        // 通过工具类从OSS读取图片
+        byte[] bytes = aliOssUtil.download(objectName);
+
+        // 根据图片后缀设置响应类型
+        MediaType mediaType =
+                objectName.toLowerCase().endsWith(".png")
+                        ? MediaType.IMAGE_PNG
+                        : MediaType.IMAGE_JPEG;
+
+        // 将图片字节数据返回给浏览器
+        return ResponseEntity.ok()
+                .contentType(mediaType)
+                .body(bytes);
+    }
+
 }
 
