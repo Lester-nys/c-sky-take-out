@@ -12,8 +12,24 @@ import java.io.ByteArrayInputStream;
 @Data
 @AllArgsConstructor
 @Slf4j
+/**
+ * 这个类的作用：
+ *
+ * 将文件上传到阿里云OSS对象存储中保存
+ *
+ * 前端上传图片后，由后端接收文件，
+ * 调用OSS提供的SDK将文件上传到OSS。
+ *
+ * OSS上传成功后返回文件访问URL，
+ * 后端将这个URL保存到数据库中。
+ *
+ * 后续查询数据时，
+ * 后端返回该URL，
+ * 前端根据URL访问OSS获取图片，
+ * 实现图片回显。
+ */
 public class AliOssUtil {
-
+    // 要提前获取这里的值
     private String endpoint;
     private String accessKeyId;
     private String accessKeySecret;
@@ -26,7 +42,7 @@ public class AliOssUtil {
      * @param objectName
      * @return
      */
-    public String upload(byte[] bytes, String objectName) {
+    public String upload(byte[] bytes, String objectName) {  // 返回的就是一个网址  图片在服务器中存储的绝对地址
 
         // 创建OSSClient实例。
         OSS ossClient = new OSSClientBuilder().build(endpoint, accessKeyId, accessKeySecret);
@@ -51,7 +67,9 @@ public class AliOssUtil {
                 ossClient.shutdown();
             }
         }
-
+        /**
+         * 拼接成一个网址
+         * */
         //文件访问路径规则 https://BucketName.Endpoint/ObjectName
         StringBuilder stringBuilder = new StringBuilder("https://");
         stringBuilder

@@ -15,3 +15,9 @@ public class AliOssProperties {
     private String bucketName;
 
 }
+
+/**
+ * 文件的作用：
+ * 读取配置文件 -> 读取对应的配置项
+ *
+ * */
