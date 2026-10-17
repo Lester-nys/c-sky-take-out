@@ -21,6 +21,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Set;
 
 @Service
 public class SetmealServiceImpl implements SetmealService {
@@ -79,8 +80,6 @@ public class SetmealServiceImpl implements SetmealService {
 
     /**
      * 套餐分页查询
-     * @param setmealPageQueryDTO
-     * @return
      */
     public PageResult pageQuery(SetmealPageQueryDTO setmealPageQueryDTO) {
         int pageNum = setmealPageQueryDTO.getPage();
@@ -91,4 +90,44 @@ public class SetmealServiceImpl implements SetmealService {
 
         return new PageResult(page.getTotal(),page.getResult());
     }
+
+    /**
+     * 修改套餐
+     */
+    @Transactional
+    public void update(SetmealDTO setmealDTO) {
+        Setmeal setmeal = new Setmeal();
+        BeanUtils.copyProperties(setmealDTO,setmeal);
+
+        // 1. 修改套餐表 执行update
+        setmealMapper.update(setmeal);
+
+        // 2. 删除套餐和菜品的关联关系 操作setmeal_dish表 执行delete
+        Long setmealId = setmealDTO.getId();  // 获取套餐id 方便下面表的操作
+        setmealDishMapper.deleteBySetmealId(setmealId);
+
+
+        // 3. 重新插入套餐和菜品的关联关系  操作setmeal_dish表 执行insert
+        List<SetmealDish> setmealDishes = setmealDTO.getSetmealDishes();  // 获取套餐里面的dishes
+        setmealDishes.forEach(setmealDish -> {
+            setmealDish.setSetmealId(setmealId);
+        });    // 给这里的每一道菜设置所属的套餐id
+        setmealDishMapper.insertBatch(setmealDishes);   // 这里就是再把刚刚设置好套餐id的 dishes 插入 setmeal_dish 表
+    }
+
+    /**
+     * 通过id查询套餐
+     */
+    public SetmealVO getByIdWithDish(Long id) {
+        // 根据id得到对应的套餐
+        Setmeal setmeal = setmealMapper.getById(id);
+        // 获取套餐里的dishes
+        List<SetmealDish> setmealDishes = setmealDishMapper.getBySetmealId(id);
+        // 设置VO 便于返回
+        SetmealVO setmealVO = new SetmealVO();
+        BeanUtils.copyProperties(setmeal,setmealVO);  // 基本信息
+        setmealVO.setSetmealDishes(setmealDishes);    // 套餐里各种菜的信息
+        return setmealVO;
+    }
+
 }
