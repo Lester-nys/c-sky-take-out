@@ -2,12 +2,16 @@ package com.sky.service.impl;
 
 import com.github.pagehelper.Page;
 import com.github.pagehelper.PageHelper;
+import com.sky.constant.MessageConstant;
+import com.sky.constant.StatusConstant;
 import com.sky.dto.DishDTO;
 import com.sky.dto.DishPageQueryDTO;
 import com.sky.entity.Dish;
 import com.sky.entity.DishFlavor;
+import com.sky.exception.DeletionNotAllowedException;
 import com.sky.mapper.DishFlavorMapper;
 import com.sky.mapper.DishMapper;
+import com.sky.mapper.SetmealDishMapper;
 import com.sky.result.PageResult;
 import com.sky.service.DishService;
 import com.sky.vo.DishVO;
@@ -25,6 +29,9 @@ public class DishServiceImpl implements DishService {
 
     @Autowired
     private DishFlavorMapper dishFlavorMapper;
+
+    @Autowired
+    private SetmealDishMapper setmealDishMapper;
 
     /**
      * 新增菜品和对应的口味
@@ -60,6 +67,34 @@ public class DishServiceImpl implements DishService {
         PageHelper.startPage(dishPageQueryDTO.getPage(),dishPageQueryDTO.getPageSize());
         Page<DishVO> page = dishMapper.pageQuery(dishPageQueryDTO);
         return new PageResult(page.getTotal(),page.getResult());
+    }
+
+    /**
+     * 实现菜品批量删除
+     * */
+    @Transactional  // 这是事务，因为涉及到 dish 和 dish_flavor 等多张表的同时操作
+    public void deleteBatch(List<Long> ids) {
+        // 1. 判断当前菜品能否一一删除：起售中的菜品不能删除
+        for(Long id : ids)
+        {
+            Dish dish = dishMapper.getById(id);
+            // 处于起售状态不可删除
+            if(dish.getStatus() == StatusConstant.ENABLE)
+                throw new DeletionNotAllowedException(MessageConstant.DISH_ON_SALE);
+        }
+
+        // 2. 判断当前菜品能否一一删除：被套餐关联的菜品不能删除
+        List<Long> setmealIds = setmealDishMapper.getSetmealIdsByDishIds(ids);
+
+        if(setmealIds != null && setmealIds.size() > 0)
+            throw new DeletionNotAllowedException(MessageConstant.CATEGORY_BE_RELATED_BY_SETMEAL);
+
+        // 经过前两个判断排除风险之后就能执行删除操作
+        for(Long id : ids)
+        {
+            dishMapper.deleteById(id);
+            dishFlavorMapper.deleteById(id);
+        }
     }
 
 }
