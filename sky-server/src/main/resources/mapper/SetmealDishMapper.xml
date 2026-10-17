@@ -2,25 +2,33 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         "http://mybatis.org/dtd/mybatis-3-mapper.dtd" >
 <mapper namespace="com.sky.mapper.SetmealDishMapper">
+    <insert id="insertBatch">
+        insert into setmeal_dish
+        (setmeal_id, dish_id, name, price, copies)
+        VALUES
+        <foreach collection="setmealDishes" item="sd" separator=",">
+            (#{sd.setmealId},#{sd.dishId},#{sd.name},#{sd.price},#{sd.copies})
+        </foreach>
+    </insert>
 
-<!--
-查询菜品关联的套餐id
-dishIds 是传递过来的要批量删除的菜品id
-for (Long dishId : dishIds) {
-    System.out.println(dishId);
-}
-    resultType="java.lang.Long" ：
-        描述的是将每一行的查询结果映射成什么类型，上述就表示将setmeal_id映射为Long
-WHERE dish_id IN (1, 2, 3)
-等价于：
-WHERE dish_id = 1
-   OR dish_id = 2
-   OR dish_id = 3;
+    <!--
+    查询菜品关联的套餐id
+    dishIds 是传递过来的要批量删除的菜品id
+    for (Long dishId : dishIds) {
+        System.out.println(dishId);
+    }
+        resultType="java.lang.Long" ：
+            描述的是将每一行的查询结果映射成什么类型，上述就表示将setmeal_id映射为Long
+    WHERE dish_id IN (1, 2, 3)
+    等价于：
+    WHERE dish_id = 1
+       OR dish_id = 2
+       OR dish_id = 3;
 
-<foreach> 用于遍历集合，
-最常见的用途就是实现 WHERE id IN (...) 这样的批量查询、批量删除或批量更新条件。
+    <foreach> 用于遍历集合，
+    最常见的用途就是实现 WHERE id IN (...) 这样的批量查询、批量删除或批量更新条件。
 
--->
+    -->
     <select id="getSetmealIdsByDishIds" resultType="java.lang.Long">
         select setmeal_id
         from setmeal_dish
