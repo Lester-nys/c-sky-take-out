@@ -39,4 +39,8 @@ public interface DishService {
     List<DishVO> listWithFlavor(Dish dish);
 
 
+    /*
+    * 设置菜品的起售和停售
+    * */
+    void startOrStop(Integer status, Long id);
 }
