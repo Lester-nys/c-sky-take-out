@@ -62,3 +62,7 @@ sky:
   wechat:
     appid: ${sky.wechat.appid}
     secret: ${sky.wechat.secret}
+
+  mvc:
+    pathmatch:
+      matching-strategy: ant_path_matcher
