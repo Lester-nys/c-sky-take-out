@@ -10,14 +10,17 @@ import com.sky.mapper.DishMapper;
 import com.sky.mapper.SetmealMapper;
 import com.sky.mapper.ShoppingCartMapper;
 import com.sky.service.ShoppingCartService;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Objects;
 
 @Service
+@Slf4j
 public class ShoppingCartServiceImpl implements ShoppingCartService {
     @Autowired
     private ShoppingCartMapper shoppingCartMapper;
@@ -34,7 +37,22 @@ public class ShoppingCartServiceImpl implements ShoppingCartService {
     public void addShoppingCart(ShoppingCartDTO shoppingCartDTO) {
         ShoppingCart shoppingCart = new ShoppingCart();
         BeanUtils.copyProperties(shoppingCartDTO,shoppingCart);
-        shoppingCart.setUserId(BaseContext.getCurrentId());
+        // 获取当前登录用户ID
+        Long userId = BaseContext.getCurrentId();
+
+// 打印实际获得的用户ID
+        log.info("添加购物车获取到的userId：{}", userId);
+
+// 将用户ID设置到购物车对象
+        shoppingCart.setUserId(userId);
+
+// 再次确认对象内部的userId
+        log.info("ShoppingCart中的userId：{}", shoppingCart.getUserId());
+
+// 没有用户ID就不允许继续执行
+        if (userId == null) {
+            throw new IllegalStateException("添加购物车失败：用户ID为空");
+        }
 
 
         // 判断当前商品是否在购物车中
@@ -45,7 +63,7 @@ public class ShoppingCartServiceImpl implements ShoppingCartService {
             // 如果已经存在就更新数量，数量加1
             shoppingCart = shoppingCartList.get(0);
             shoppingCart.setNumber(shoppingCart.getNumber() + 1);;
-            shoppingCartMapper.updataNumberById(shoppingCart);
+            shoppingCartMapper.updateNumberById(shoppingCart);
 
         }
         else
@@ -83,5 +101,75 @@ public class ShoppingCartServiceImpl implements ShoppingCartService {
                 builder().
                 userId(BaseContext.getCurrentId()).
                 build());
+    }
+
+    /**
+     * 清空购物车商品
+     */
+    public void cleanShoppingCart() {
+        shoppingCartMapper.deleteByUserId(BaseContext.getCurrentId());
+    }
+
+    /**
+     * 减少购物车中的商品数量
+     */
+    @Override
+    public void subShoppingCart(ShoppingCartDTO shoppingCartDTO) {
+
+        // 1. 获取当前登录用户ID
+        Long userId = BaseContext.getCurrentId();
+
+        if (userId == null) {
+            throw new IllegalStateException("当前登录用户ID为空");
+        }
+
+        // 2. 创建购物车对象，作为查询条件
+        ShoppingCart shoppingCart = new ShoppingCart();
+
+        // 3. 将DTO中的商品信息复制到ShoppingCart
+        BeanUtils.copyProperties(shoppingCartDTO, shoppingCart);
+
+        // 4. 设置当前登录用户ID
+        shoppingCart.setUserId(userId);
+
+        // 5. 查询当前用户对应的购物车商品
+        List<ShoppingCart> list = shoppingCartMapper.list(shoppingCart);
+
+        // 6. 找到商品ID和口味都匹配的购物车记录
+        ShoppingCart target = null;
+
+        for (ShoppingCart item : list) {
+
+            if (Objects.equals(item.getDishId(), shoppingCartDTO.getDishId())
+                    && Objects.equals(item.getSetmealId(), shoppingCartDTO.getSetmealId())
+                    && Objects.equals(item.getDishFlavor(), shoppingCartDTO.getDishFlavor())) {
+
+                target = item;
+                break;
+            }
+        }
+
+        // 7. 如果购物车中不存在对应商品，直接返回
+        if (target == null) {
+            return;
+        }
+
+        // 8. 获取当前商品数量
+        Integer number = target.getNumber();
+
+        if (number != null && number > 1) {
+
+            // 数量大于1，直接减1
+            target.setNumber(number - 1);
+
+            // 更新数据库中的商品数量
+            shoppingCartMapper.updateNumberById(target);
+
+        } else {
+
+            // 数量为1时，删除购物车中的这条记录
+            shoppingCartMapper.deleteByIdAndUserId(
+                    target.getId(), userId);
+        }
     }
 }

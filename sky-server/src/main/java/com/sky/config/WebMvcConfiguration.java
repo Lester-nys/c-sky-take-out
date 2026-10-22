@@ -32,17 +32,26 @@ public class WebMvcConfiguration extends WebMvcConfigurationSupport {
     @Autowired
     private JwtTokenAdminInterceptor jwtTokenAdminInterceptor;
 
+    @Autowired
+    private JwtTokenUserInterceptor jwtTokenUserInterceptor;
     /**
      * 注册自定义拦截器
      *
      * @param registry
      */
     protected void addInterceptors(InterceptorRegistry registry) {
+        // 1. 注册admin端JWT拦截器
         log.info("开始注册自定义拦截器...");
         registry.addInterceptor(jwtTokenAdminInterceptor)
                 .addPathPatterns("/admin/**")
                 .excludePathPatterns("/admin/employee/login")
                 .excludePathPatterns("/admin/common/image/**");
+
+        // 2. 注册用户端JWT拦截器
+        registry.addInterceptor(jwtTokenUserInterceptor)
+                .addPathPatterns("/user/**")
+                .excludePathPatterns("/user/user/login")
+                .excludePathPatterns("/user/shop/status");
     }
 
     /**
@@ -67,7 +76,6 @@ public class WebMvcConfiguration extends WebMvcConfigurationSupport {
 
     /**
      * 设置静态资源映射
-     * @param registry
      */
     protected void addResourceHandlers(ResourceHandlerRegistry registry) {
         registry.addResourceHandler("/doc.html").addResourceLocations("classpath:/META-INF/resources/");
@@ -83,45 +91,5 @@ public class WebMvcConfiguration extends WebMvcConfigurationSupport {
         converter.setObjectMapper(new JacksonObjectMapper());
         // 将自己的消息转换器加入容器中
         converters.add(0,converter);
-    }
-
-
-
-    /**
-     * 注入用户端 JWT 拦截器
-     *
-     * @Autowired：
-     * Spring 会从 IoC 容器中找到 JwtTokenUserInterceptor 对象，
-     * 并将其注入到当前配置类中。
-     *
-     * 前提：
-     * JwtTokenUserInterceptor 已经交给 Spring 管理，
-     * 例如在类上添加 @Component 注解。
-     */
-    @Autowired
-    private JwtTokenUserInterceptor jwtTokenUserInterceptor;
-    /**
-     * 注册自定义拦截器
-     *
-     * addInterceptors：
-     * Spring MVC 提供的拦截器注册方法。
-     *
-     * registry：
-     * 拦截器注册器，负责添加拦截器和配置拦截规则。
-     */
-    protected void addInterceptor(InterceptorRegistry registry)
-    {
-        log.info("开始注册自定义拦截器...");
-        // ① 将我们编写的 JWT 拦截器注册到 Spring MVC 中
-        registry.addInterceptor(jwtTokenUserInterceptor)
-                // ② 拦截所有以 /user/ 开头的请求路径
-                // ** 表示匹配零层或多层路径
-                .addPathPatterns("/user/**")
-                // ③ 排除用户登录接口，不进行 JWT 校验
-                // 因为用户登录之前还没有 JWT Token
-                .excludePathPatterns("/user/user/login")
-                // ④ 排除获取店铺营业状态接口
-                // 即使没有登录，也允许访问店铺营业状态
-                .excludePathPatterns("/user/shop/status");
     }
 }
