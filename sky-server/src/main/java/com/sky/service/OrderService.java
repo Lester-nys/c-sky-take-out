@@ -30,4 +30,9 @@ public interface OrderService {
      * 用户端订单分页查询
      */
     PageResult pageQuery4User(int page, int pageSize, Integer status);
+
+    /**
+     * 查询订单详情
+     */
+    OrderVO details(Long id);
 }
