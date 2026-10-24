@@ -1,0 +1,115 @@
+
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>WebSocket 入门测试</title>
+</head>
+<body>
+
+<h2>WebSocket 测试页面</h2>
+
+<!-- 输入需要发送的消息 -->
+<input id="text" type="text">
+
+<!-- 点击后将消息发送给服务器 -->
+<button onclick="send()">发送消息</button>
+
+<!-- 主动断开 WebSocket 连接 -->
+<button onclick="closeWebSocket()">关闭连接</button>
+
+<!-- 用来显示服务器推送的消息 -->
+<div id="message"></div>
+
+<script>
+    // 保存 WebSocket 客户端对象
+    var websocket = null;
+
+    // 随机生成一个客户端唯一标识
+    var clientId = Math.random().toString(36).substring(2);
+
+    // 判断浏览器是否支持 WebSocket
+    if ('WebSocket' in window) {
+
+        // 与 Java 服务端建立连接
+        // 对应 @ServerEndpoint("/ws/{sid}")
+        websocket = new WebSocket(
+            "ws://localhost:8080/ws/" + clientId
+        );
+
+    } else {
+        alert("当前浏览器不支持 WebSocket");
+    }
+
+    /**
+     * 建立连接成功时执行
+     */
+    websocket.onopen = function () {
+        setMessageInnerHTML("连接成功");
+    };
+
+    /**
+     * 收到服务端消息时执行
+     *
+     * event.data 就是服务端发送的消息内容
+     */
+    websocket.onmessage = function (event) {
+        setMessageInnerHTML(event.data);
+    };
+
+    /**
+     * 发生连接错误时执行
+     */
+    websocket.onerror = function () {
+        setMessageInnerHTML("连接发生错误");
+    };
+
+    /**
+     * 连接关闭时执行
+     */
+    websocket.onclose = function () {
+        setMessageInnerHTML("连接已关闭");
+    };
+
+    /**
+     * 在页面中显示一条消息
+     */
+    function setMessageInnerHTML(message) {
+        var div = document.getElementById("message");
+
+        // 每条消息放在单独的一行
+        var p = document.createElement("p");
+        p.textContent = message;
+        div.appendChild(p);
+    }
+
+    /**
+     * 浏览器主动向服务器发送消息
+     */
+    function send() {
+
+        // 获取输入框的内容
+        var message = document.getElementById("text").value;
+
+        // 调用 WebSocket API 发送消息
+        websocket.send(message);
+    }
+
+    /**
+     * 主动断开连接
+     */
+    function closeWebSocket() {
+        websocket.close();
+    }
+
+    /**
+     * 关闭浏览器页面时，主动断开连接
+     */
+    window.onbeforeunload = function () {
+        websocket.close();
+    };
+
+</script>
+
+</body>
+</html>
