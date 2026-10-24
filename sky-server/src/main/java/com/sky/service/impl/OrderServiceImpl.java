@@ -285,4 +285,108 @@ public class OrderServiceImpl implements OrderService {
         // 将购物车对象批量添加到数据库
         shoppingCartMapper.insertBatch(shoppingCartList);
     }
+
+    /**
+     * 订单搜索
+     */
+    public PageResult conditionSearch(OrdersPageQueryDTO ordersPageQueryDTO) {
+        // 设置分页规则 查询第几页 每页多少条订单记录
+        PageHelper.startPage(ordersPageQueryDTO.getPage(), ordersPageQueryDTO.getPageSize());
+
+        // 开始执行查询
+        Page<Orders> page = orderMapper.pageQuery(ordersPageQueryDTO);
+
+        // 部分订单状态，需要额外返回订单菜品信息，将Orders转化为OrderVO
+        List<OrderVO> orderVOList = getOrderVOList(page);
+
+        return new PageResult(page.getTotal(), orderVOList);
+    }
+    /**
+    * 一个订单VO = 订单基本信息（Orders） + 订单菜品明细（转成字符串OrderDishes）
+    */
+    /**
+     * 组装订单数据
+     * */
+    /**
+     * 将分页查询出来的 Orders 转换为 OrderVO
+     * @param page 分页查询结果
+     * @return 包含菜品信息的 OrderVO 集合
+     */
+    private List<OrderVO> getOrderVOList(Page<Orders> page) {
+
+        // 1. 创建一个空集合，用于保存最终的 OrderVO
+        List<OrderVO> orderVOList = new ArrayList<>();
+
+        // 2. 从分页对象中获取当前页的订单列表
+        List<Orders> ordersList = page.getResult();
+
+        // 3. 判断订单集合是否为空
+        // 非空才继续处理，避免无意义的遍历
+        if (!CollectionUtils.isEmpty(ordersList)) {
+
+            // 4. 遍历当前页中的每一个订单
+            for (Orders orders : ordersList) {
+
+                // 5. 创建一个新的 OrderVO 对象
+                OrderVO orderVO = new OrderVO();
+
+                // 6. 复制 Orders 与 OrderVO 中同名且兼容的属性
+                BeanUtils.copyProperties(orders, orderVO);
+
+                // 7. 查询当前订单的菜品信息，并拼接成字符串
+                String orderDishes = getOrderDishesStr(orders);
+
+                // 8. 将菜品信息设置到 OrderVO 中
+                orderVO.setOrderDishes(orderDishes);
+
+                // 9. 将组装好的 OrderVO 添加到结果集合
+                orderVOList.add(orderVO);
+            }
+        }
+
+        // 10. 返回所有组装完成的 OrderVO
+        return orderVOList;
+    }
+
+    /**
+     * 根据订单id获取菜品信息字符串
+     * 组装订单里的菜品
+     */
+    private String getOrderDishesStr(Orders orders) {
+
+        /*  一个订单对应多条订单明细
+            OrderDetail(name="宫保鸡丁", number=2)
+            OrderDetail(name="米饭", number=3)
+        */
+        // 根据订单ID查询订单菜品明细
+        List<OrderDetail> orderDetailList =
+                orderDetailMapper.getByOrderId(orders.getId());
+
+        // 将每条订单明细转换成字符串
+        /*
+            stream()：把集合转换成一个 Stream 流，方便进行批量数据处理。
+            map() 是映射转换，不是你之前学过的 HashMap
+            将流中的每个 OrderDetail 对象转换为一个 String
+            x -> { ... } 是 Lambda 表达式，其中 x 代表流中当前处理的一条 OrderDetail 数据。
+            collect(Collectors.toList())
+
+            collect()：把转换后的结果收集为一个新的 List 集合。
+        */
+        List<String> orderDishList = orderDetailList.stream()
+                .map(x -> {
+                    String orderDish =
+                            x.getName() + "*" + x.getNumber() + ";";
+
+                    return orderDish;
+                })
+                .collect(Collectors.toList());
+
+        // 将所有字符串拼接在一起
+        /*
+            String.join() 用于将多个字符串拼接在一起。
+            它的基本格式：
+            String.join(分隔符, 字符串集合);
+        */
+        return String.join("", orderDishList);
+    }
 }
