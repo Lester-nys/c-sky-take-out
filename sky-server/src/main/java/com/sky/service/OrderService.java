@@ -50,4 +50,9 @@ public interface OrderService {
      * 条件搜索订单
      */
     PageResult conditionSearch(OrdersPageQueryDTO ordersPageQueryDTO);
+
+    /**
+     * 各个状态的订单数量统计
+     */
+    OrderStatisticsVO statistics();
 }
