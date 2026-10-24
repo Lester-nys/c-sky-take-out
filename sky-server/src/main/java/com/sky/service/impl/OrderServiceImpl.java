@@ -19,18 +19,19 @@ import com.sky.vo.OrderPaymentVO;
 import com.sky.vo.OrderStatisticsVO;
 import com.sky.vo.OrderSubmitVO;
 import com.sky.vo.OrderVO;
+import org.springframework.beans.factory.annotation.Value;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.core.env.Environment;
+import org.springframework.core.env.Profiles;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.core.env.Profiles;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.CollectionUtils;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.stream.Collectors;
 
 /**
@@ -51,6 +52,14 @@ public class OrderServiceImpl implements OrderService {
     private AddressBookMapper addressBookMapper;
     @Autowired
     private WeChatPayUtil weChatPayUtil;
+
+    // 是否启用模拟支付，默认关闭
+    @Value("${sky.payment.mock-enabled:false}")
+    private boolean mockPaymentEnabled;
+
+    // 获取当前 Spring 运行环境
+    @Autowired
+    private Environment environment;
 
     /**
      * 用户下单
@@ -123,28 +132,101 @@ public class OrderServiceImpl implements OrderService {
      * @param ordersPaymentDTO
      * @return
      */
-    public OrderPaymentVO payment(OrdersPaymentDTO ordersPaymentDTO) throws Exception {
-        // 当前登录用户id
-        Long userId = BaseContext.getCurrentId();
-        User user = userMapper.getById(userId);
+//    public OrderPaymentVO payment(OrdersPaymentDTO ordersPaymentDTO) throws Exception {
+//        // 当前登录用户id
+//        Long userId = BaseContext.getCurrentId();
+//        User user = userMapper.getById(userId);
+//
+//        //调用微信支付接口，生成预支付交易单
+//        JSONObject jsonObject = weChatPayUtil.pay(
+//                ordersPaymentDTO.getOrderNumber(), //商户订单号
+//                new BigDecimal(0.01), //支付金额，单位 元
+//                "苍穹外卖订单", //商品描述
+//                user.getOpenid() //微信用户的openid
+//        );
+//
+//        if (jsonObject.getString("code") != null && jsonObject.getString("code").equals("ORDERPAID")) {
+//            throw new OrderBusinessException("该订单已支付");
+//        }
+//
+//        OrderPaymentVO vo = jsonObject.toJavaObject(OrderPaymentVO.class);
+//        vo.setPackageStr(jsonObject.getString("package"));
+//
+//        return vo;
+//    }
 
-        //调用微信支付接口，生成预支付交易单
-        JSONObject jsonObject = weChatPayUtil.pay(
-                ordersPaymentDTO.getOrderNumber(), //商户订单号
-                new BigDecimal(0.01), //支付金额，单位 元
-                "苍穹外卖订单", //商品描述
-                user.getOpenid() //微信用户的openid
+    /**
+     * 模拟订单支付成功
+     *
+     * 仅允许在 dev 开发环境执行。
+     * 不调用微信支付，不发生真实资金交易。
+     *
+     * @param ordersPaymentDTO 支付请求参数，包含订单号
+     * @return 模拟支付结果
+     */
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public OrderPaymentVO payment(OrdersPaymentDTO ordersPaymentDTO) {
+
+        // 1. 确保模拟支付只在开发环境启用
+        if (!mockPaymentEnabled ||
+                !environment.acceptsProfiles(Profiles.of("dev"))) {
+            throw new OrderBusinessException("模拟支付仅允许在开发环境使用");
+        }
+
+        // 2. 获取当前登录用户ID
+        Long userId = BaseContext.getCurrentId();
+
+        // 3. 获取前端传入的订单号
+        String orderNumber = ordersPaymentDTO.getOrderNumber();
+
+        if (orderNumber == null || orderNumber.isEmpty()) {
+            throw new OrderBusinessException("订单号不能为空");
+        }
+
+        // 4. 查询当前用户的订单
+        // 同时校验订单归属，不能支付其他用户的订单
+        Orders ordersDB = orderMapper.getByNumberAndUserId(
+                orderNumber, userId
         );
 
-        if (jsonObject.getString("code") != null && jsonObject.getString("code").equals("ORDERPAID")) {
+        // 5. 校验订单是否存在
+        if (ordersDB == null) {
+            throw new OrderBusinessException("订单不存在");
+        }
+
+        // 6. 校验是否已经支付
+        if (Objects.equals(ordersDB.getPayStatus(), Orders.PAID)) {
             throw new OrderBusinessException("该订单已支付");
         }
 
-        OrderPaymentVO vo = jsonObject.toJavaObject(OrderPaymentVO.class);
-        vo.setPackageStr(jsonObject.getString("package"));
+        // 7. 只能支付待付款状态的订单
+        if (!Objects.equals(ordersDB.getStatus(), Orders.PENDING_PAYMENT)
+                || !Objects.equals(ordersDB.getPayStatus(), Orders.UN_PAID)) {
+            throw new OrderBusinessException("当前订单状态不允许支付");
+        }
+
+        // 8. 构造订单更新对象，只修改需要更新的字段
+        Orders orders = Orders.builder()
+                .id(ordersDB.getId())
+                .status(Orders.TO_BE_CONFIRMED) // 待接单
+                .payStatus(Orders.PAID)         // 已支付
+                .checkoutTime(LocalDateTime.now())
+                .build();
+
+        // 9. 更新数据库
+        orderMapper.update(orders);
+
+        log.info("【模拟支付成功】订单号：{}，用户ID：{}",
+                orderNumber, userId);
+
+        // 10. 告诉前端本次是模拟支付
+        OrderPaymentVO vo = new OrderPaymentVO();
+        vo.setMockPaid(true);
 
         return vo;
     }
+
 
     /**
      * 支付成功，修改订单状态
@@ -317,6 +399,18 @@ public class OrderServiceImpl implements OrderService {
         orderStatisticsVO.setConfirmed(confirmed);
         orderStatisticsVO.setDeliveryInProgress(deliveryInProgress);
         return orderStatisticsVO;
+    }
+
+    /**
+     * 接单
+     */
+    public void confirm(OrdersConfirmDTO ordersConfirmDTO) {
+        Orders orders = Orders.builder()
+                .id(ordersConfirmDTO.getId())
+                .status(Orders.CONFIRMED)
+                .build();
+
+        orderMapper.update(orders);
     }
     /**
     * 一个订单VO = 订单基本信息（Orders） + 订单菜品明细（转成字符串OrderDishes）

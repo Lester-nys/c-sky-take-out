@@ -55,4 +55,9 @@ public interface OrderService {
      * 各个状态的订单数量统计
      */
     OrderStatisticsVO statistics();
+
+    /**
+     * 接单
+     * */
+    void confirm(OrdersConfirmDTO ordersConfirmDTO);
 }

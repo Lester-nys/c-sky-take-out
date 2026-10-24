@@ -5,6 +5,7 @@ import com.sky.dto.GoodsSalesDTO;
 import com.sky.dto.OrdersPageQueryDTO;
 import com.sky.entity.Orders;
 import org.apache.ibatis.annotations.Mapper;
+import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
 import org.springframework.stereotype.Service;
 
@@ -46,4 +47,16 @@ public interface OrderMapper {
      */
     @Select("select count(id) from orders where status = #{status}")
     Integer countStatus(Integer status);
+
+
+    /**
+     *
+     */
+
+    @Select("select * from orders " +
+            "where number = #{orderNumber} and user_id = #{userId}")
+    Orders getByNumberAndUserId(
+            @Param("orderNumber") String orderNumber,
+            @Param("userId") Long userId
+    );
 }
