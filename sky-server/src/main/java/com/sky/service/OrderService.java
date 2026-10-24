@@ -70,4 +70,9 @@ public interface OrderService {
      * 取消订单
      * */
     void cancel(OrdersCancelDTO ordersCancelDTO);
+
+    /**
+     * 派送订单
+     * */
+    void delivery(Long id);
 }

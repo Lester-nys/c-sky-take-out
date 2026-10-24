@@ -577,6 +577,25 @@ public class OrderServiceImpl implements OrderService {
                 orderId, ordersDB.getNumber());
     }
 
+    /**
+     * 派送订单
+     */
+    public void delivery(Long id) {
+        // 根据id查询订单
+        Orders ordersDB = orderMapper.getById(id);
+
+        // 校验订单是否存在，并且状态为 3
+        if (ordersDB == null || !ordersDB.getStatus().equals(Orders.CONFIRMED)) {
+            throw new OrderBusinessException(MessageConstant.ORDER_STATUS_ERROR);
+        }
+
+        Orders orders = new Orders();
+        orders.setId(ordersDB.getId());
+        // 更新订单状态,状态转为派送中
+        orders.setStatus(Orders.DELIVERY_IN_PROGRESS);
+
+        orderMapper.update(orders);
+    }
 
 
     /**
@@ -629,7 +648,6 @@ public class OrderServiceImpl implements OrderService {
      * 4. 待付款订单直接取消，无需退款
      * 5. 已支付的待接单订单执行模拟退款
      * 6. 将订单状态修改为已取消，并记录取消原因和时间
-     *
      * @param id 需要取消的订单ID
      */
     @Override
