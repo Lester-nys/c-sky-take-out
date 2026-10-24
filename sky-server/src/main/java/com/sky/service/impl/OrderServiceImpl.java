@@ -158,6 +158,7 @@ public class OrderServiceImpl implements OrderService {
 //        return vo;
 //    }
 
+
     /**
      * 模拟订单支付成功
      *
@@ -209,17 +210,20 @@ public class OrderServiceImpl implements OrderService {
             throw new OrderBusinessException("当前订单状态不允许支付");
         }
 
-        // 8. 构造订单更新对象，只修改需要更新的字段
-        Orders orders = Orders.builder()
-                .id(ordersDB.getId())
-                .status(Orders.TO_BE_CONFIRMED) // 待接单
-                .payStatus(Orders.PAID)         // 已支付
-                .checkoutTime(LocalDateTime.now())
-                .build();
+        // ================= 修改开始 =================
 
-        // 9. 更新数据库
-        orderMapper.update(orders);
+        // 8. 模拟支付成功后，调用统一的支付成功处理方法
+        // paySuccess() 负责：
+        // ① 将订单状态修改为待接单
+        // ② 将支付状态修改为已支付
+        // ③ 记录结账时间
+        // ④ 通过 WebSocket 向商家管理端发送来单提醒
 
+        paySuccess(orderNumber);
+
+        // ================= 修改结束 =================
+
+        // 9. 打印日志
         log.info("【模拟支付成功】订单号：{}，用户ID：{}",
                 orderNumber, userId);
 
@@ -229,6 +233,7 @@ public class OrderServiceImpl implements OrderService {
 
         return vo;
     }
+
 
 
     /**
@@ -762,5 +767,24 @@ public class OrderServiceImpl implements OrderService {
         // 11. 打印日志
         log.info("用户取消订单成功，订单ID：{}，订单号：{}",
                 id, ordersDB.getNumber());
+    }
+
+
+    /**
+     * 用户催单
+     */
+    public void reminder(Long id) {
+        // 查询订单是否存在
+        Orders orders = orderMapper.getById(id);
+        if (orders == null) {
+            throw new OrderBusinessException(MessageConstant.ORDER_NOT_FOUND);
+        }
+
+        //基于WebSocket实现催单
+        Map map = new HashMap();
+        map.put("type", 2);//2代表用户催单
+        map.put("orderId", id);
+        map.put("content", "订单号：" + orders.getNumber());
+        webSocketServer.sendToAllClient(JSON.toJSONString(map));
     }
 }

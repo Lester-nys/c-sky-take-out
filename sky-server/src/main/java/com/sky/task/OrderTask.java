@@ -44,12 +44,12 @@ public class OrderTask {
     /**
      * 处理“派送中”状态的订单
      */
-    @Scheduled(cron = "0/30 * * * * ?")
+    @Scheduled(cron = "0 */10 * * *  ?")
     public void processDeliveryOrder(){
         log.info("定时任务测试：处理派送中订单：{}", new Date());
 
-        // select * from orders where status = 4 and order_time < 当前时间-1分钟
-        LocalDateTime time = LocalDateTime.now().minusSeconds(30);
+        // select * from orders where status = 4 and order_time < 当前时间-10分钟
+        LocalDateTime time = LocalDateTime.now().minusMinutes(10);
         List<Orders> ordersList = orderMapper.getByStatusAndOrdertimeLT(Orders.DELIVERY_IN_PROGRESS, time);
 
         if(ordersList != null && ordersList.size() > 0){
