@@ -302,47 +302,6 @@ public class OrderServiceImpl implements OrderService {
     }
 
     /**
-     * 用户取消订单
-     */
-    public void userCancelById(Long id) throws Exception {
-        // 根据id查询订单
-        Orders ordersDB = orderMapper.getById(id);
-
-        // 校验订单是否存在
-        if (ordersDB == null) {
-            throw new OrderBusinessException(MessageConstant.ORDER_NOT_FOUND);
-        }
-
-        //订单状态 1 待付款 2 待接单 3 已接单 4派送中 5 已完成 6 已取消
-        if (ordersDB.getStatus() > 2) {
-            throw new OrderBusinessException(MessageConstant.ORDER_STATUS_ERROR);
-        }
-
-        // 创建一个新的订单，给原来的订单增添新的字段，原来旧的字段不变
-        Orders orders = new Orders();
-        orders.setId(ordersDB.getId());
-
-        // 订单处于待接单状态下取消，需要进行退款
-        if (ordersDB.getStatus().equals(Orders.TO_BE_CONFIRMED)) {
-            //调用微信支付退款接口
-            weChatPayUtil.refund(
-                    ordersDB.getNumber(),       // 商户订单号
-                    ordersDB.getNumber(),       //商户退款单号
-                    new BigDecimal(0.01),   // 退款金额，单位 元
-                    new BigDecimal(0.01));  //原订单金额
-
-            //支付状态修改为 退款
-            orders.setPayStatus(Orders.REFUND);
-        }
-
-        // 更新订单状态、取消原因、取消时间
-        orders.setStatus(Orders.CANCELLED);
-        orders.setCancelReason("用户取消");
-        orders.setCancelTime(LocalDateTime.now());
-        orderMapper.update(orders);
-    }
-
-    /**
      * 再来一单
      */
     public void repetition(Long id) {
@@ -500,4 +459,252 @@ public class OrderServiceImpl implements OrderService {
         */
         return String.join("", orderDishList);
     }
+
+
+
+    /**
+     * 商家拒单
+     *
+     * 只有待接单状态的订单可以拒单。
+     * 如果订单已经支付，则执行开发环境模拟退款。
+     *
+     * @param ordersRejectionDTO 包含订单ID和拒单原因
+     */
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void rejection(OrdersRejectionDTO ordersRejectionDTO) {
+
+        // 1. 根据订单ID查询订单
+        Orders ordersDB = orderMapper.getById(ordersRejectionDTO.getId());
+
+        // 2. 校验订单是否存在，以及是否处于待接单状态
+        if (ordersDB == null || !Objects.equals(ordersDB.getStatus(), Orders.TO_BE_CONFIRMED)) {
+            throw new OrderBusinessException(MessageConstant.ORDER_STATUS_ERROR);
+        }
+
+        // 3. 创建订单对象，用于更新数据库
+        Orders orders = new Orders();
+
+        // 设置需要修改的字段
+        orders.setId(ordersDB.getId());
+        orders.setStatus(Orders.CANCELLED);                 // 已取消
+        orders.setRejectionReason(ordersRejectionDTO.getRejectionReason());
+        orders.setCancelTime(LocalDateTime.now());
+
+        // 4. 模拟退款
+        // 如果原订单已经支付，则将新对象的 payStatus 设置为 REFUND
+        // 如果原订单未支付，则不修改 payStatus
+        mockRefundIfPaid(ordersDB, orders);
+
+        // 5. 更新数据库
+        orderMapper.update(orders);
+    }
+
+
+    /**
+     * 商家取消订单
+     *
+     * 业务规则：
+     * 1. 根据订单ID查询订单
+     * 2. 校验订单是否存在
+     * 3. 已完成、已取消的订单不允许再次取消
+     * 4. 如果订单已支付，则执行模拟退款
+     * 5. 修改订单状态为已取消
+     * 6. 保存商家输入的取消原因以及取消时间
+     *
+     * @param ordersCancelDTO 包含订单ID和取消原因
+     */
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void cancel(OrdersCancelDTO ordersCancelDTO) {
+
+        // 1. 获取需要取消的订单ID
+        Long orderId = ordersCancelDTO.getId();
+
+        // 2. 根据订单ID查询数据库中的原始订单
+        Orders ordersDB = orderMapper.getById(orderId);
+
+        // 3. 判断订单是否存在
+        if (ordersDB == null) {
+            throw new OrderBusinessException(
+                    MessageConstant.ORDER_NOT_FOUND
+            );
+        }
+
+        // 4. 校验订单状态
+        // 已取消、已完成的订单不允许重复取消
+        Integer status = ordersDB.getStatus();
+
+        if (status == null
+                || Objects.equals(status, Orders.CANCELLED)
+                || Objects.equals(status, Orders.COMPLETED)) {
+
+            throw new OrderBusinessException(
+                    MessageConstant.ORDER_STATUS_ERROR
+            );
+        }
+
+        // 5. 创建新的Orders对象
+        // 只设置需要更新的字段
+        Orders orders = new Orders();
+
+        // 设置订单ID
+        orders.setId(ordersDB.getId());
+
+        // 6. 将订单状态修改为已取消
+        orders.setStatus(Orders.CANCELLED);
+
+        // 7. 设置取消原因
+        // 原因来自商家端提交的OrdersCancelDTO
+        orders.setCancelReason(
+                ordersCancelDTO.getCancelReason()
+        );
+
+        // 8. 设置取消时间
+        orders.setCancelTime(LocalDateTime.now());
+
+        // 9. 模拟退款
+        // 内部会判断订单是否已支付
+        // 已支付：payStatus设置为REFUND
+        // 未支付：不修改payStatus
+        mockRefundIfPaid(ordersDB, orders);
+
+        // 10. 更新数据库
+        orderMapper.update(orders);
+
+        // 11. 打印日志
+        log.info("商家取消订单成功，订单ID：{}，订单号：{}",
+                orderId, ordersDB.getNumber());
+    }
+
+
+
+    /**
+     * 模拟退款
+     *
+     * 功能：
+     * 1. 判断订单是否已经支付
+     * 2. 检查当前是否为开发环境
+     * 3. 模拟退款成功，修改支付状态
+     *
+     * 注意：
+     * 这里只修改传入的Orders对象，
+     * 真正更新数据库需要调用orderMapper.update(orders)
+     *
+     * @param ordersDB 数据库中查询出来的原始订单
+     * @param orders   准备更新的订单对象
+     */
+    private void mockRefundIfPaid(Orders ordersDB, Orders orders) {
+
+        // 1. 判断订单是否已经支付
+        // 如果未支付，就不需要退款，直接结束方法
+        if (!Objects.equals(ordersDB.getPayStatus(), Orders.PAID)) {
+            return;
+        }
+
+        // 2. 确保只有开发环境可以使用模拟退款
+        if (!mockPaymentEnabled ||
+                !environment.acceptsProfiles(Profiles.of("dev"))) {
+
+            throw new OrderBusinessException("真实退款尚未配置");
+        }
+
+        // 3. 模拟退款成功
+        // 不调用微信支付接口，只打印日志
+        log.info("【模拟退款成功】订单号：{}", ordersDB.getNumber());
+
+        // 4. 设置支付状态为已退款
+        // Orders.REFUND = 2
+        orders.setPayStatus(Orders.REFUND);
+    }
+
+
+    /**
+     * 用户取消订单
+     *
+     * 业务规则：
+     * 1. 订单必须存在
+     * 2. 只能取消当前登录用户自己的订单
+     * 3. 只有待付款、待接单状态可以直接取消
+     * 4. 待付款订单直接取消，无需退款
+     * 5. 已支付的待接单订单执行模拟退款
+     * 6. 将订单状态修改为已取消，并记录取消原因和时间
+     *
+     * @param id 需要取消的订单ID
+     */
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void userCancelById(Long id) {
+
+        // 1. 根据订单ID查询数据库中的原始订单
+        Orders ordersDB = orderMapper.getById(id);
+
+        // 2. 判断订单是否存在
+        if (ordersDB == null) {
+            throw new OrderBusinessException(
+                    MessageConstant.ORDER_NOT_FOUND
+            );
+        }
+
+        // 3. 校验订单是否属于当前登录用户
+        Long userId = BaseContext.getCurrentId();
+
+        if (!Objects.equals(ordersDB.getUserId(), userId)) {
+            throw new OrderBusinessException("无权取消该订单");
+        }
+
+        // 4. 校验订单状态
+        // 1：待付款
+        // 2：待接单
+        // 3：已接单
+        // 4：派送中
+        // 5：已完成
+        // 6：已取消
+
+        Integer status = ordersDB.getStatus();
+
+        // 只有状态1或2允许用户直接取消
+        if (!Objects.equals(status, Orders.PENDING_PAYMENT)
+                && !Objects.equals(status, Orders.TO_BE_CONFIRMED)) {
+
+            throw new OrderBusinessException(
+                    MessageConstant.ORDER_STATUS_ERROR
+            );
+        }
+
+        // 5. 创建新的Orders对象，用于修改订单信息
+        // 不直接修改ordersDB，便于区分原始订单和更新数据
+        Orders orders = new Orders();
+
+        // 设置需要修改的订单ID
+        orders.setId(ordersDB.getId());
+
+        // 6. 判断是否需要退款
+        // 待接单状态可能已经支付，需要模拟退款
+        if (Objects.equals(status, Orders.TO_BE_CONFIRMED)) {
+
+            // 如果已支付，设置支付状态为已退款
+            // 如果未支付，则不修改支付状态
+            mockRefundIfPaid(ordersDB, orders);
+        }
+
+        // 7. 将订单状态修改为已取消
+        orders.setStatus(Orders.CANCELLED);
+
+        // 8. 设置取消原因
+        orders.setCancelReason("用户取消");
+
+        // 9. 记录取消时间
+        orders.setCancelTime(LocalDateTime.now());
+
+        // 10. 更新数据库
+        // 更新status、pay_status（如果发生模拟退款）、
+        // cancel_reason、cancel_time等字段
+        orderMapper.update(orders);
+
+        // 11. 打印日志
+        log.info("用户取消订单成功，订单ID：{}，订单号：{}",
+                id, ordersDB.getNumber());
+    }
+
 }

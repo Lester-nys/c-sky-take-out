@@ -60,4 +60,14 @@ public interface OrderService {
      * 接单
      * */
     void confirm(OrdersConfirmDTO ordersConfirmDTO);
+
+    /**
+     * 拒单
+     */
+    void rejection(OrdersRejectionDTO ordersRejectionDTO);
+
+    /**
+     * 取消订单
+     * */
+    void cancel(OrdersCancelDTO ordersCancelDTO);
 }
